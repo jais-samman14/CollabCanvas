@@ -8,7 +8,7 @@ import { usePresence } from '../hooks/usePresence';
 import { useChat } from '../hooks/useChat';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import Toolbar from '../components/canvas/Toolbar';
+import Toolbar from '../components/canvas/ToolBar';
 import CanvasBoard from '../components/canvas/CanvasBoard';
 import CursorOverlay from '../components/canvas/CursorOverlay';
 import PresenceBar from '../components/canvas/PresenceBar';
