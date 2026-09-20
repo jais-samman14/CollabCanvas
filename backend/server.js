@@ -49,15 +49,27 @@ httpServer.listen(PORT, () => {
 });
 
 (async function init() {
-    // MongoDB and Redis are both hard dependencies here 
-    // rate limiting and OTP storage both run on Redis
+    // MongoDB and Redis are both hard dependencies here:
+    // the data lives in Mongo, and rate limiting + OTP storage run on Redis
     try {
         await connectDB();
         console.log('MongoDB ready');
-        await connectRedis();
+    } catch (err) {
+        console.error('MongoDB unavailable, cannot start:', err.message);
+        httpServer.close(() => process.exit(1));
+        return;
+    }
+
+    try {
+        await Promise.race([
+            connectRedis(),
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Redis connect timed out after 12s')), 12000)
+            )
+        ]);
         console.log('Redis ready');
     } catch (err) {
-        console.error('Startup failed:', err.message);
+        console.error('Redis unavailable, cannot start:', err.message);
         httpServer.close(() => process.exit(1));
         return;
     }
