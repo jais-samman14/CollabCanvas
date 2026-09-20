@@ -61,7 +61,7 @@ const boardSchema = new mongoose.Schema(
         },
         owner :{
             type : mongoose.Schema.Types.ObjectId,
-            ref : 'User',
+            ref : 'User',   //useful when we will use .populate('owner)
             required : true,
         },
         strokes : [strokeSchema],
@@ -92,6 +92,19 @@ const boardSchema = new mongoose.Schema(
 );
 
 boardSchema.index({ owner : 1, updatedAt : -1 });
+
+// check if a user can access this board
+boardSchema.methods.canAccess = function (userId) {
+    const uid = String(userId);
+    if (String(this.owner) === uid) return true;
+    if (this.collaborators.some((c) => String(c) === uid)) return true;
+    return this.isPublic === true;
+};
+
+// only the owner can do destructive things
+boardSchema.methods.isOwner = function (userId) {
+    return String(this.owner) === String(userId);
+};
 
 const Board = mongoose.model('Board', boardSchema);
 module.exports = Board;

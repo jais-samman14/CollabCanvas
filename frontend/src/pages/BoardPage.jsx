@@ -18,6 +18,7 @@ import {
   updateBoardAPI,
   leaveBoardAPI,
   endSessionAPI,
+  setBoardSharing,
 } from '../services/boardService';
 import { throttle } from '../utils/throttle';
 
@@ -160,9 +161,7 @@ const BoardEditor = ({ board, boardId }) => {
 
   const chat = useChat(boardId, isChatOpen);
 
-  
   // Listen for session:ended broadcast
-
   useEffect(() => {
     if (!socket) return;
     const handleSessionEnded = ({ by }) => {
@@ -179,6 +178,17 @@ const BoardEditor = ({ board, boardId }) => {
     socket.on('session:ended', handleSessionEnded);
     return () => socket.off('session:ended', handleSessionEnded);
   }, [socket, isOwner, navigate, pushToast]);
+
+  // Server-side rejections (authorization, rate limit) —
+  // surface them instead of letting the action fail silently
+  useEffect(() => {
+    if (!socket) return;
+    const handleServerError = ({ message }) => {
+      pushToast(`⚠️ ${message}`, 'warning');
+    };
+    socket.on('error', handleServerError);
+    return () => socket.off('error', handleServerError);
+  }, [socket, pushToast]);
 
   // Presence toasts
   const [prevUsers, setPrevUsers] = useState([]);
@@ -306,10 +316,26 @@ const BoardEditor = ({ board, boardId }) => {
     setShowExportMenu(false);
   };
 
-  const handleShareLink = () => {
-    const url = window.location.href;
-    navigator.clipboard.writeText(url);
-    pushToast('🔗 Share link copied!', 'success');
+  // Clear is owner-only. Guard locally too, otherwise a collaborator's canvas
+  // clears while the server rejects the broadcast — leaving the clients diverged.
+  const handleClearAll = useCallback(() => {
+    if (!isOwner) {
+      pushToast('⚠️ Only the board owner can clear the board', 'warning');
+      return;
+    }
+    canvas.clearAll();
+  }, [isOwner, canvas, pushToast]);
+
+  const handleShareLink = async () => {
+    try {
+      if (isOwner) {
+        await setBoardSharing(boardId, true);
+      }
+      navigator.clipboard.writeText(window.location.href);
+      pushToast('🔗 Share link copied — anyone with the link can now join', 'success');
+    } catch (err) {
+      pushToast('Failed to enable sharing', 'warning');
+    }
   };
 
   // END COLLABORATION HANDLERS
@@ -430,7 +456,7 @@ const BoardEditor = ({ board, boardId }) => {
           <button
             onClick={handleShareLink}
             className="px-3 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-lg hover:border-slate-500 transition"
-            title="Copy shareable link"
+            title={isOwner ? 'Enable link sharing and copy the link' : 'Copy board link'}
           >
             🔗 Share
           </button>
@@ -503,7 +529,8 @@ const BoardEditor = ({ board, boardId }) => {
           deleteSelected={canvas.deleteSelected}
           undo={canvas.undo}
           redo={canvas.redo}
-          clearAll={canvas.clearAll}
+          clearAll={handleClearAll}
+          canClear={isOwner}
           canUndo={canvas.canUndo}
           canRedo={canvas.canRedo}
         />

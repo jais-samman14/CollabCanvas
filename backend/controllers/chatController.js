@@ -35,7 +35,7 @@ const getChatHistory = async (req, res) => {
     const messages = await Chat.find({ boardId })
       .sort({ createdAt: -1 })
       .limit(Number(limit))
-      .lean();
+      .lean();//mtlb plain js return kro mongoose document nhi
 
     return res.status(200).json({
       success: true,

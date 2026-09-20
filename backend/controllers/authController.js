@@ -29,7 +29,7 @@ const signupUser = async (req, res) => {
                     _id: user._id,
                     name: user.name,
                     email: user.email,
-                    token: generateToken(user),//immediately give token so that after signup,user shold not redirected to login page
+                    token: generateToken(user),//immediately give token so that after signup,user should not redirected to login page
                 }
             });
         }
@@ -85,31 +85,35 @@ const forgotPassword = async(req,res)=>{
             });
         }
         const user = await User.findOne({email});
-        const cooldownKey = `password_reset_cooldown:${email}`;
-        const cooldownExists = await redisClient.get(cooldownKey);
+        if(!user){
+            return res.status(200).json({
+                success : true,
+                message : "If the email exists, an OTP has been sent.",
+            });
+        }
+
+        const cooldownKey = `password_reset_cooldown:${email}`;//we have to make redis-key for otp spam protection
+        const cooldownExists = await redisClient.get(cooldownKey);//check kro redis me ki iss particular key liye cooldown present h 
         if(cooldownExists){
             return res.status(429).json({
                 success : false,
                 message : "Please wait 30 seconds before requesting another OTP"
             });
         }
-        if(!user){
-            return res.status(400).json({
-                success : false,
-                message : "If the email exists, an OTP has been sent.",
-            });
-        }
-        const otp = generateOTP();
-        const hashedOtp = hashOTP(otp);
-        const otpKey = `password_reset_otp:${email}`;
 
-        await redisClient.set(otpKey, hashedOtp, { EX : 300});
-        const verifyStored = await redisClient.get(otpKey);
-        const attempsKey = `password_reset_attempts:${email}`;
-        await redisClient.del(attempsKey);
-        await redisClient.set(cooldownKey, "1", {EX : 30});
+        const otp = generateOTP(); //generating otp
+        const hashedOtp = hashOTP(otp); //hashed otp
+        const otpKey = `password_reset_otp:${email}`; //redis key created
 
-        await sendPasswordResetOTP(email, otp);
+        await redisClient.set(otpKey, hashedOtp, { EX : 300}); //redis me store kro otpkey aur hashedPassword, 300sec me expire
+        const verifyStored = await redisClient.get(otpKey); //check if is it stored
+
+        const attempsKey = `password_reset_attempts:${email}`;//kitti baar wrong otp daala ka count store krega
+        await redisClient.del(attempsKey);//naya otp generate hoga toh delete krta h previous attempts ko
+        await redisClient.set(cooldownKey, "1", {EX : 30}); //abb 30 sec tkk dobara otp nhi maang skta h
+
+        await sendPasswordResetOTP(email, otp);//now send otp
+
         return res.status(200).json({
             success : true,
             message : "If the email exists, an OTP has been sent",
@@ -157,7 +161,7 @@ const resetPassword = async(req, res)=>{
         const cooldownKey = `password_reset_cooldown:${email}`;
 
         const attempts = Number((await redisClient.get(attemptKey)) || 0);
-        if(attempts >= 10){
+        if(attempts >= 5){
             return res.status(429).json({
                 success : false,
                 message : "Too many wrong otp attempts. Please request a new OTP later."
@@ -184,6 +188,7 @@ const resetPassword = async(req, res)=>{
                 message : `Invalid OTP. ${remaining} attempts remaining.`,
             });
         }
+
         user.password = newPassword;
         user.tokenVersion = (user.tokenVersion || 0) + 1;
         await user.save();
@@ -216,7 +221,7 @@ const logoutUser = async(req, res)=>{
                 message : "User Not Found",
             });
         }
-        user.tokenVersion += 1;
+        user.tokenVersion += 1;//invalidate previous token
         await user.save();
         return res.status(200).json({
             success : true,

@@ -11,11 +11,11 @@ const chatSchema = new mongoose.Schema(
         sender : {
             type : mongoose.Schema.Types.ObjectId,
             ref : 'User',
-            required : true
+            required : true,
         },
         senderName : {
             type : String,
-            required : true
+            required : true,
         },
         senderColor : {
             type : String,

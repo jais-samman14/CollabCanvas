@@ -6,24 +6,39 @@
 const crypto = require('crypto');//builtin nodejs module
 const { redisClient } = require('../config/redis');
 
+const SLIDING_WINDOW_SCRIPT = `
+local key         = KEYS[1]
+local now         = tonumber(ARGV[1])
+local window      = tonumber(ARGV[2])
+local maxRequests = tonumber(ARGV[3])
+local member      = ARGV[4]
+
+redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+local count = redis.call('ZCARD', key)
+
+if count >= maxRequests then
+  return {0, 0}
+end
+
+redis.call('ZADD', key, now, member)
+redis.call('EXPIRE', key, window)
+return {1, maxRequests - (count + 1)}
+`;
+
 class SlidingWindowLimiter {
-    async allow(key, maxRequests, windowSize){
-        const curr_time = Math.floor(Date.now()/1000);
-        const window_time = curr_time - windowSize;//mtlb isse pehle waale ko htana h
-        await redisClient.zRemRangeByScore(key, 0, window_time); //hta do jo range se bahar h
-        const remaining_request = await redisClient.zCard(key);//request in current window
-        if(remaining_request >= maxRequests){
-            return {
-                allowed : false,
-                remaining : 0
-            }
-        }
-        await redisClient.zAdd(key, [{score : curr_time, value : `${curr_time} : ${crypto.randomUUID()}`}]);
-        await redisClient.expire(key, windowSize);
-        return{
-            allowed : true,
-            remaining : maxRequests - (remaining_request + 1)
-        }
+    async allow(key, maxRequests, windowSize) {
+        const now = Math.floor(Date.now() / 1000);
+        const member = `${now}:${crypto.randomUUID()}`;
+
+        const [allowed, remaining] = await redisClient.eval(SLIDING_WINDOW_SCRIPT, {
+            keys: [key],
+            arguments: [String(now), String(windowSize), String(maxRequests), member],
+        });
+
+        return {
+            allowed: allowed === 1,
+            remaining,
+        };
     }
 };
 

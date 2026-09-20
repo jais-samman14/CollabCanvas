@@ -4,6 +4,7 @@ const checkRateLimit = require("../middleware/socketRateLimit");
 const socketLimits = require("../rateLimiter/socketLimiter");
 
 const registerChatHandlers = (io, socket) => {
+
   // ═══════════════════════════════════════════════
   // NEW CHAT MESSAGE
   // Save to DB + broadcast to room
@@ -68,6 +69,8 @@ const registerChatHandlers = (io, socket) => {
       isTyping: false,
     });
   });
+
+  
 };
 
 module.exports = registerChatHandlers;

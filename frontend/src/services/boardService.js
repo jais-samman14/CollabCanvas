@@ -37,3 +37,6 @@ export const endSessionAPI = async (id) => {
   const response = await axiosInstance.delete(`/boards/${id}/end-session`);
   return response.data;
 };
+
+export const setBoardSharing = (boardId, isPublic = true) =>
+  axiosInstance.patch(`/boards/${boardId}/share`, { isPublic });

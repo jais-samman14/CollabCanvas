@@ -25,7 +25,7 @@ const generateUserColor = (userId) => {
 const initializeSocket = (httpServer) => {
   const io = new Server(httpServer, {
     cors: {
-      origin: '*', // Dev: allow all. Production: restrict to your frontend URL
+      origin: [process.env.FRONTEND_URL, 'http://localhost:5173'].filter(Boolean),
       methods: ['GET', 'POST'],
       credentials: true,
     },

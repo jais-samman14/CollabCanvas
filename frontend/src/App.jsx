@@ -77,28 +77,23 @@ function App() {
           <div className="min-h-screen bg-canvas-bg text-white">
             <Navbar />
             <GlobalEventListener />
+
             <Routes>
               {/* Public routes */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
-              <Route
-                path="/forgot-password"
-                element={<ForgotPasswordPage />}
-              />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />}/>
               <Route path="/reset-password" element={<ResetPasswordPage />} />
-
               {/* Protected routes */}
-              <Route
-                path="/dashboard"
+              <Route path="/dashboard" 
                 element={
                   <PrivateRoute>
                     <Dashboard />
                   </PrivateRoute>
                 }
               />
-              <Route
-                path="/board/:id"
+              <Route path="/board/:id"
                 element={
                   <PrivateRoute>
                     <BoardPage />
@@ -106,7 +101,9 @@ function App() {
                 }
               />
             </Routes>
+
           </div>
+          
         </SocketProvider>
       </AuthProvider>
     </BrowserRouter>

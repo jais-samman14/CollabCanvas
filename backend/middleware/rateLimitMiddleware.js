@@ -4,7 +4,7 @@ const createRateLimiter = ({maxRequests, windowSize, keyPrefix}) => {
     return async(req,res,next)=>{
         try{
             const identifier = req.user?._id || req.ip;
-            const key = `${keyPrefix} : ${identifier}`;
+            const key = `${keyPrefix}:${identifier}`;
             const result = await limiter.allow(key, maxRequests, windowSize);
             if(!result.allowed){
                 return res.status(429).json({

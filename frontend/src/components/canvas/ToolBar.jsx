@@ -43,6 +43,7 @@ const Toolbar = ({
   undo,
   redo,
   clearAll,
+  canClear = true,
   canUndo,
   canRedo,
 }) => {
@@ -259,7 +260,9 @@ const Toolbar = ({
           </div>
           <button
             onClick={clearAll}
-            className="w-full py-2 px-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/20 transition"
+            disabled={!canClear}
+            title={canClear ? 'Clear the whole canvas' : 'Only the board owner can clear the board'}
+            className="w-full py-2 px-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-500/10 transition"
           >
             🗑️ Clear Canvas
           </button>
