@@ -18,6 +18,8 @@ Think Miro or Excalidraw, but built from scratch to actually understand how real
 
 ----------------------------------------
 
+
+
 ## Repo Structure
 
 This is a monorepo with two folders:
@@ -47,11 +49,16 @@ You'll need Node.js 18+, MongoDB Atlas, Redis, and a Gmail App Password.
 git clone https://github.com/YOUR_USERNAME/CollabCanvas.git
 cd CollabCanvas
 
+
+
+
 Backend:
 cd backend 
 npm install
 cp .env.example .env    
 npm run dev
+
+
 
 Frontend:
 cd frontend
@@ -60,9 +67,16 @@ cp .env.example .env
 npm run dev
 
 
+
+
+
 Why I built this
 Honestly, got tired of building simple CRUD apps. Wanted something that would force me to deal with WebSockets, canvas rendering, multi-user syncing, and real production concerns like rate limiting and session management.
 Took way longer than I expected. Ran into a lot of bugs. Learned a ton.
+
+
+
+
 
 Contact
 Built by Samman Jaiswal
