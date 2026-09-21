@@ -1,4 +1,5 @@
 const express = require('express');
+require('dns').setDefaultResultOrder('ipv4first');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const http = require('http');
@@ -12,6 +13,7 @@ const initializeSocket = require('./sockets');
 dotenv.config();
 
 const app = express();
+
 app.set('trust proxy', 1);
 
 const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:5173'].filter(Boolean);
