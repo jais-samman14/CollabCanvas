@@ -1,26 +1,24 @@
-// src/utils/throttle.js
-
 /**
- * Throttle a function to run at most once per `wait` milliseconds.
- * Perfect for high-frequency events like mousemove (60fps → ~16ms interval).
- * @param {Function} fn - Function to throttle
- * @param {number} wait - Minimum ms between calls (default 50 = 20fps)
+ * Throttles a high-frequency function so it executes at most once per `wait` ms,
+ * preserving the trailing call with the most recent arguments.
+ * Includes a `.cancel()` method to prevent stale timers firing after unmount.
+ * @param {Function} fn - Callback to throttle.
+ * @param {number} [wait=50] - Minimum interval in milliseconds (50ms = 20fps).
+ * @returns {Function & { cancel: () => void }} Throttled function with cancel helper.
  */
 export const throttle = (fn, wait = 50) => {
   let lastTime = 0;
   let timeoutId = null;
   let lastArgs = null;
 
-  return function throttled(...args) {
+  const throttled = function throttledFn(...args) {
     const now = Date.now();
     const elapsed = now - lastTime;
 
     if (elapsed >= wait) {
-      // Enough time passed → run immediately
       lastTime = now;
       fn.apply(this, args);
     } else {
-      // Schedule for later → capture latest args
       lastArgs = args;
       if (!timeoutId) {
         timeoutId = setTimeout(() => {
@@ -31,4 +29,14 @@ export const throttle = (fn, wait = 50) => {
       }
     }
   };
+
+  /** Cancels any pending trailing invocation. */
+  throttled.cancel = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+
+  return throttled;
 };

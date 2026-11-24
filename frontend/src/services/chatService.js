@@ -1,10 +1,10 @@
-// src/services/chatService.js
 import axiosInstance from './axiosInstance';
 
 /**
- * Fetch chat history for a specific board.
- * @param {string} boardId - Board ID
- * @param {number} limit - Max messages to fetch (default 100)
+ * Fetches chronological chat message history for a board.
+ * @param {string} boardId - Target board ID.
+ * @param {number} [limit=100] - Maximum number of messages to retrieve.
+ * @returns {Promise<object>}
  */
 export const getChatHistoryAPI = async (boardId, limit = 100) => {
   const response = await axiosInstance.get(`/chats/${boardId}`, {

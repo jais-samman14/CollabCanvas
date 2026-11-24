@@ -1,4 +1,3 @@
-// src/hooks/useChat.js
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
@@ -6,6 +5,13 @@ import { getChatHistoryAPI } from '../services/chatService';
 
 const TYPING_TIMEOUT_MS = 2000;
 
+/**
+ * Manages board chat history, real-time incoming messages, unread badge count,
+ * and per-user typing indicators keyed cleanly by userId.
+ * @param {string} boardId - Active board ID.
+ * @param {boolean} isPanelOpen - Whether the chat sidebar is currently visible.
+ * @returns {{ messages: object[], loadingHistory: boolean, typingUsers: string[], unreadCount: number, sendMessage: Function, notifyTyping: Function }}
+ */
 export const useChat = (boardId, isPanelOpen) => {
   const { socket, isConnected } = useSocket();
   const { user } = useAuth();
@@ -18,12 +24,19 @@ export const useChat = (boardId, isPanelOpen) => {
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
   const otherTypingTimeoutsRef = useRef({});
+  const isPanelOpenRef = useRef(isPanelOpen);
 
-  // Load chat history
+  useEffect(() => {
+    isPanelOpenRef.current = isPanelOpen;
+    if (isPanelOpen) setUnreadCount(0);
+  }, [isPanelOpen]);
+
+  // Fetch initial chat history from MongoDB
   useEffect(() => {
     if (!boardId) return;
     let cancelled = false;
-    const load = async () => {
+
+    const loadHistory = async () => {
       try {
         setLoadingHistory(true);
         const res = await getChatHistoryAPI(boardId);
@@ -34,27 +47,30 @@ export const useChat = (boardId, isPanelOpen) => {
         if (!cancelled) setLoadingHistory(false);
       }
     };
-    load();
+
+    loadHistory();
     return () => {
       cancelled = true;
     };
   }, [boardId]);
 
-  // Subscribe to socket events
+  // Subscribe to real-time chat events without tearing down listeners when panel toggles
   useEffect(() => {
     if (!socket || !isConnected) return;
 
     const onMessage = (msg) => {
       setMessages((prev) => [...prev, msg]);
-      if (!isPanelOpen && msg.sender !== user?._id) {
+      if (!isPanelOpenRef.current && msg.sender !== user?._id) {
         setUnreadCount((n) => n + 1);
       }
     };
 
     const onTyping = ({ userId, name, isTyping }) => {
-      if (userId === user?._id) return;
+      if (!userId || userId === user?._id) return;
+
       if (isTyping) {
-        setTypingUsers((prev) => ({ ...prev, name }));
+        // Fixed: key by [userId] so multiple typers never overwrite each other and cleanup works
+        setTypingUsers((prev) => ({ ...prev, [userId]: name }));
         if (otherTypingTimeoutsRef.current[userId]) {
           clearTimeout(otherTypingTimeoutsRef.current[userId]);
         }
@@ -66,6 +82,7 @@ export const useChat = (boardId, isPanelOpen) => {
           });
         }, TYPING_TIMEOUT_MS + 500);
       } else {
+        clearTimeout(otherTypingTimeoutsRef.current[userId]);
         setTypingUsers((prev) => {
           const next = { ...prev };
           delete next[userId];
@@ -74,7 +91,6 @@ export const useChat = (boardId, isPanelOpen) => {
       }
     };
 
-    //  Session ended → clear all chat locally
     const onSessionEnded = () => {
       setMessages([]);
       setUnreadCount(0);
@@ -88,14 +104,11 @@ export const useChat = (boardId, isPanelOpen) => {
     return () => {
       socket.off('chat:message', onMessage);
       socket.off('chat:typing', onTyping);
-      socket.off('session:ended', onSessionEnded); 
+      socket.off('session:ended', onSessionEnded);
     };
-  }, [socket, isConnected, isPanelOpen, user]);
+  }, [socket, isConnected, user]);
 
-  useEffect(() => {
-    if (isPanelOpen) setUnreadCount(0);
-  }, [isPanelOpen]);
-
+  /** Sends a trimmed chat message and clears the local typing state. */
   const sendMessage = useCallback(
     (text) => {
       if (!socket || !boardId || !text?.trim()) return;
@@ -109,6 +122,7 @@ export const useChat = (boardId, isPanelOpen) => {
     [socket, boardId]
   );
 
+  /** Emits debounced typing start/stop events while the user composes a message. */
   const notifyTyping = useCallback(() => {
     if (!socket || !boardId) return;
     if (!isTypingRef.current) {

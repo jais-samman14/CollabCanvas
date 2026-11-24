@@ -1,40 +1,31 @@
+// Per-event WebSocket sliding-window rate limit thresholds.
 module.exports = {
+  CHAT_SEND: {
+    maxRequests: 30,
+    windowSize: 60,
+  },
 
-    CHAT_SEND : {
-        maxRequests : 30,
-        windowSize : 60, //.   30 msg per minutes
-    },
+  // Client batches scene deltas every 100ms (~10 events/sec max during active drawing).
+  // 1200/min gives 2x headroom for multi-tab bursts and paste operations.
+  SCENE_UPDATE: {
+    maxRequests: 1200,
+    windowSize: 60,
+  },
 
-    STROKE_ADD : {
-        maxRequests : 100,
-        windowSize : 60,       //100 strokes per min
-    },
+  BOARD_CLEAR: {
+    maxRequests: 10,
+    windowSize: 300,
+  },
 
-    STROKE_UPDATE : {
-        maxRequests : 200,
-        windowSize : 60,           //200 update per minutes
-    },
+  SESSION_END: {
+    maxRequests: 5,
+    windowSize: 3600,
+  },
 
-    STROKE_DELETE : {
-        maxRequests : 100,
-        windowSize : 60,         
-    },
+  TYPING: {
+    maxRequests: 60,
+    windowSize: 60,
+  },
 
-    BOARD_CLEAR : {
-        maxRequests : 10,
-        windowSize : 300,           // 10 clears per 5 min
-    },
-
-    SESSION_END : {
-        maxRequests : 5,
-        windowSize : 3600,           // 5 end-session per hour
-    },
-
-    TYPING : {
-        maxRequests : 60,
-        windowSize : 60,           
-    },
-
-    MAX_VIOLATIONS : 3,
-
+  MAX_VIOLATIONS: 3,
 };

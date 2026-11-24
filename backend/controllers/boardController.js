@@ -1,22 +1,38 @@
+const mongoose = require('mongoose');
 const Board = require('../models/Board');
 const Chat = require('../models/Chat');
+const sceneStore = require('../services/sceneStoreSingleton');
+const {
+  LIMITS,
+  validateElements,
+  sanitizeAppState,
+  isValidColor,
+} = require('../utils/sceneValidation');
 
-// create board : when user click on "New Board"
-// agar login hoga tbhi createBoard kar skta hai....(all are protected routes)
-// @route (POST method) '/api/boards'
+/**
+ * Validates that a route parameter is a syntactically valid MongoDB ObjectId.
+ * @param {string} id - Candidate ID string.
+ * @returns {boolean}
+ */
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+/**
+ * Creates a new empty Excalidraw whiteboard owned by the authenticated user.
+ * @route POST /api/boards
+ */
 const createBoard = async (req, res) => {
   try {
-    const { name, canvasWidth, canvasHeight, backgroundColor } = req.body;
-    //Board.create() : mongoose method to create a document inside a Board Collection(validate krta h schema ke against)
-    //CRETAED document return krta hai (_id with timestamps)
+    const { name, backgroundColor } = req.body;
+    const safeBg = isValidColor(backgroundColor) ? backgroundColor : '#ffffff';
+
     const board = await Board.create({
-      name: name || 'Untitled Board',
+      name: (typeof name === 'string' && name.trim()) || 'Untitled Board',
       owner: req.user._id,
-      canvasWidth,
-      canvasHeight,
-      backgroundColor,
-      strokes: [],//fresh board me empty array no drawing
+      backgroundColor: safeBg,
+      elements: [],
+      appState: { viewBackgroundColor: safeBg, gridSize: null },
     });
+
     return res.status(201).json({
       success: true,
       message: 'Board created successfully',
@@ -31,17 +47,17 @@ const createBoard = async (req, res) => {
   }
 };
 
-//get All boards : like when user come to dashboard it fetches all the board for that particular user
-// @route (GET Method) '/api/boards'
+/**
+ * Lists all boards owned by or shared with the authenticated user (excluding heavy scene payloads).
+ * @route GET /api/boards
+ */
 const getMyBoards = async (req, res) => {
   try {
-    //Board.find() -> find all document of the user
     const boards = await Board.find({
-      //means search boards where owner is "curr_user" or collaborator is "curr_user"...do queries simultaneously(1 query fast)
       $or: [{ owner: req.user._id }, { collaborators: req.user._id }],
     })
-      .select('-strokes') //exclude strokes (not neede strokes right now , want it later when user open board)
-      .sort({ updatedAt: -1 }); //latest board first aayega..
+      .select('-elements -appState')
+      .sort({ updatedAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -57,14 +73,18 @@ const getMyBoards = async (req, res) => {
   }
 };
 
-//getBoard
-//fetch data of specific board...when user click on specific board tile
-// @route (GET Method) '/api/boards/:id'
+/**
+ * Loads a single board by ID, automatically registering the user as a collaborator
+ * if the board is public, and overlaying live in-memory scene elements when present.
+ * @route GET /api/boards/:id
+ */
 const getBoardById = async (req, res) => {
   try {
-    // .populate('owner')-> means expand owner field (mtlb User collection me dekhega aur [name , email] dega)
-    // owner ek object bn jayega(jiske andr [_id, name, email] hoga)
-    const board = await Board.findById(req.params.id).populate('owner', 'name email');//here N+1 query problem solve krta h
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid board ID' });
+    }
+
+    const board = await Board.findById(req.params.id).populate('owner', 'name email');
     if (!board) {
       return res.status(404).json({ success: false, message: 'Board not found' });
     }
@@ -74,15 +94,22 @@ const getBoardById = async (req, res) => {
     const isCollaborator = board.collaborators.some((c) => c.toString() === userId);
 
     if (!isOwner && !isCollaborator) {
-        if (!board.isPublic) {
-            return res.status(403).json({ success: false, message: 'You do not have access to this board' });
-        }
-        // public board — join as collaborator
-        board.collaborators.push(req.user._id);
-        await board.save();
+      if (!board.isPublic) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have access to this board',
+        });
+      }
+      board.collaborators.push(req.user._id);
+      await board.save();
     }
-    //now return board data
-    return res.status(200).json({ success: true, data: board });
+
+    // Prefer live in-memory scene so late joiners never see stale DB snapshots
+    const data = board.toObject();
+    const live = sceneStore.peekElements(board._id);
+    if (live) data.elements = live;
+
+    return res.status(200).json({ success: true, data });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -92,16 +119,22 @@ const getBoardById = async (req, res) => {
   }
 };
 
-//update board
-//jab bhi board me stroke change hota hai board update hota h
-// @routes PUT ('/api/boards/:id')
-// we are using put because we are replacing full board object............patch(existing me change krta h)
+/**
+ * Updates board metadata and/or merges Excalidraw scene elements through sceneStore
+ * using versioned CRDT LWW rules so stale tabs can never overwrite newer edits.
+ * @route PUT /api/boards/:id
+ */
 const updateBoard = async (req, res) => {
   try {
-    const board = await Board.findById(req.params.id);
-    if (!board) return res.status(404).json({ success: false, message: 'Board not found' });
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid board ID' });
+    }
 
-    //kewal user aur collabrator hi update krr skte h board ko..
+    const board = await Board.findById(req.params.id).select('owner collaborators');
+    if (!board) {
+      return res.status(404).json({ success: false, message: 'Board not found' });
+    }
+
     const userId = req.user._id.toString();
     const isOwner = board.owner.toString() === userId;
     const isCollaborator = board.collaborators.some((c) => c.toString() === userId);
@@ -109,18 +142,53 @@ const updateBoard = async (req, res) => {
     if (!isOwner && !isCollaborator) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
-    //abb jo jo update aa rha h req.body se woh lo aur db me update kro
-    const { name, strokes, backgroundColor, canvasWidth, canvasHeight } = req.body;
-    if (name !== undefined) board.name = name;
-    if (strokes !== undefined) board.strokes = strokes;
-    if (backgroundColor !== undefined) board.backgroundColor = backgroundColor;
-    if (canvasWidth !== undefined) board.canvasWidth = canvasWidth;
-    if (canvasHeight !== undefined) board.canvasHeight = canvasHeight;
-    const updatedBoard = await board.save();
+
+    const { name, elements, appState, backgroundColor } = req.body;
+    const set = {};
+
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) {
+        return res.status(400).json({ success: false, message: 'Invalid board name' });
+      }
+      set.name = name.trim();
+    }
+
+    if (backgroundColor !== undefined) {
+      if (!isValidColor(backgroundColor)) {
+        return res.status(400).json({ success: false, message: 'Invalid background color' });
+      }
+      set.backgroundColor = backgroundColor;
+    }
+
+    if (appState !== undefined) {
+      const clean = sanitizeAppState(appState);
+      set.appState = clean;
+      if (clean.viewBackgroundColor && backgroundColor === undefined) {
+        set.backgroundColor = clean.viewBackgroundColor;
+      }
+    }
+
+    if (elements !== undefined) {
+      const { valid, error } = validateElements(elements, {
+        maxCount: LIMITS.MAX_ELEMENTS_PER_SAVE,
+        checkSize: false,
+      });
+      if (error) {
+        return res.status(400).json({ success: false, message: 'Invalid scene data' });
+      }
+      await sceneStore.applyDelta(board._id, valid);
+      await sceneStore.flush(board._id);
+    }
+
+    if (Object.keys(set).length > 0) {
+      await Board.updateOne({ _id: board._id }, { $set: set });
+    }
+
+    const updated = await Board.findById(board._id).select('-elements').lean();
     return res.status(200).json({
       success: true,
       message: 'Board updated successfully',
-      data: updatedBoard,
+      data: updated,
     });
   } catch (error) {
     return res.status(500).json({
@@ -131,20 +199,34 @@ const updateBoard = async (req, res) => {
   }
 };
 
-//delete board
-//when user click on delete the board must get deleted
-// @route DELETE('/api/boards/:id')
+/**
+ * Permanently deletes a board, evicts its live scene cache, and removes its chat history.
+ * Restricted to the board owner.
+ * @route DELETE /api/boards/:id
+ */
 const deleteBoard = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid board ID' });
+    }
+
     const board = await Board.findById(req.params.id);
-    if (!board) return res.status(404).json({ success: false, message: 'Board not found' });
-    if (board.owner.toString() !== req.user._id.toString()) {
+    if (!board) {
+      return res.status(404).json({ success: false, message: 'Board not found' });
+    }
+    if (!board.isOwner(req.user._id)) {
       return res.status(403).json({
         success: false,
         message: 'Only the owner can delete this board',
       });
     }
-    await board.deleteOne();
+
+    sceneStore.evict(board._id);
+    await Promise.all([
+      board.deleteOne(),
+      Chat.deleteMany({ boardId: board._id }),
+    ]);
+
     return res.status(200).json({ success: true, message: 'Board deleted successfully' });
   } catch (error) {
     return res.status(500).json({
@@ -155,19 +237,23 @@ const deleteBoard = async (req, res) => {
   }
 };
 
-// leave BOARD (collaborator removes self)
-// @route DELETE /api/boards/:id/leave
-// Private (collaborator only — owner can't leave own board)
+/**
+ * Removes the authenticated collaborator from a shared board.
+ * @route DELETE /api/boards/:id/leave
+ */
 const leaveBoard = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid board ID' });
+    }
+
     const board = await Board.findById(req.params.id);
     if (!board) {
       return res.status(404).json({ success: false, message: 'Board not found' });
     }
-    const userId = req.user._id.toString();
-    const isOwner = board.owner.toString() === userId;
 
-    if (isOwner) {
+    const userId = req.user._id.toString();
+    if (board.isOwner(userId)) {
       return res.status(400).json({
         success: false,
         message: 'Owner cannot leave own board. Use "End Session" instead.',
@@ -181,9 +267,9 @@ const leaveBoard = async (req, res) => {
         message: 'You are not a collaborator on this board',
       });
     }
-    //filter(naya array return krega) remove out this board_id from board.collabrators array
+
     board.collaborators = board.collaborators.filter((c) => c.toString() !== userId);
-    await board.save();//save to db
+    await board.save();
 
     return res.status(200).json({
       success: true,
@@ -198,34 +284,39 @@ const leaveBoard = async (req, res) => {
   }
 };
 
-// END SESSION (owner removes all collaborators + optionally emit)
-// @route DELETE /api/boards/:id/end-session
-// Private (owner only)
+/**
+ * Ends an active collaboration session (owner only): removes all collaborators,
+ * disables public link sharing, and clears all board chat messages.
+ * @route DELETE /api/boards/:id/end-session
+ */
 const endSession = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid board ID' });
+    }
+
     const board = await Board.findById(req.params.id);
     if (!board) {
       return res.status(404).json({ success: false, message: 'Board not found' });
     }
-    const isOwner = board.owner.toString() === req.user._id.toString();
-    if (!isOwner) {
+    if (!board.isOwner(req.user._id)) {
       return res.status(403).json({
         success: false,
         message: 'Only the owner can end the session',
       });
     }
-    //remove all collaborators
+
     const removedCount = board.collaborators.length;
     board.collaborators = [];
-    board.isPublic = false; // also disable public sharing when session ends
+    board.isPublic = false;
     await board.save();
 
-    //deleted all chats
-    const chatDelete = await Chat.deleteMany({ board: board._id });
+    // Fixed: Chat schema stores the board reference under `boardId`, not `board`
+    const chatDelete = await Chat.deleteMany({ boardId: board._id });
 
     return res.status(200).json({
       success: true,
-      message: `Session ended. ${removedCount} collaborator(s) removed, and chat history cleared.`,
+      message: `Session ended. ${removedCount} collaborator(s) removed and chat history cleared.`,
       data: { removedCount, deletedMessages: chatDelete.deletedCount },
     });
   } catch (error) {
@@ -237,15 +328,25 @@ const endSession = async (req, res) => {
   }
 };
 
-// toggle sharing — owner only
-// @route PATCH /api/boards/:id/share
+/**
+ * Enables or disables public share-by-link access on a board (owner only).
+ * @route PATCH /api/boards/:id/share
+ */
 const toggleShare = async (req, res) => {
   try {
-    const board = await Board.findById(req.params.id);
-    if (!board) return res.status(404).json({ success: false, message: 'Board not found' });
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid board ID' });
+    }
 
+    const board = await Board.findById(req.params.id);
+    if (!board) {
+      return res.status(404).json({ success: false, message: 'Board not found' });
+    }
     if (!board.isOwner(req.user._id)) {
-      return res.status(403).json({ success: false, message: 'Only the owner can change sharing' });
+      return res.status(403).json({
+        success: false,
+        message: 'Only the owner can change sharing',
+      });
     }
 
     board.isPublic = req.body.isPublic === undefined ? true : Boolean(req.body.isPublic);
@@ -257,7 +358,11 @@ const toggleShare = async (req, res) => {
       data: { isPublic: board.isPublic },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to update sharing', error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update sharing',
+      error: error.message,
+    });
   }
 };
 
@@ -267,7 +372,7 @@ module.exports = {
   getBoardById,
   updateBoard,
   deleteBoard,
-  leaveBoard,      
+  leaveBoard,
   endSession,
-  toggleShare,     
+  toggleShare,
 };

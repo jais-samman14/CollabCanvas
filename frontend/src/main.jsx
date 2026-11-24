@@ -1,17 +1,11 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
-import { AuthProvider } from './context/AuthContext';
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import './index.css';
+import App from './App';
 
-//entry point (start our application)
-//authProvider is global provider
-//render App component here
-
+// Entry point: AuthProvider and SocketProvider are mounted once inside App.jsx
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
-  </StrictMode>,
-)
+    <App />
+  </StrictMode>
+);

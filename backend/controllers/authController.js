@@ -1,240 +1,274 @@
-const User = require("../models/User");
-const generateToken = require("../utils/generateToken");
-const { validationResult } = require("express-validator");
+const crypto = require('crypto');
+const User = require('../models/User');
+const generateToken = require('../utils/generateToken');
 const generateOTP = require('../utils/otpGenerator');
-const {redisClient} = require("../config/redis");
-const {sendPasswordResetOTP} = require('../services/emailService');
-const crypto = require("crypto");
-const hashOTP = (otp) =>{
-    return crypto.createHash("sha256").update(String(otp)).digest("hex");
+const cacheStore = require('../services/cacheStore');
+const { sendPasswordResetOTP } = require('../services/emailService');
+
+/**
+ * Computes a SHA-256 hex digest of an OTP string so plaintext OTPs are never cached.
+ * @param {string} otp - 6-digit OTP code.
+ * @returns {string} 64-character hex digest.
+ */
+const hashOTP = (otp) => {
+  return crypto.createHash('sha256').update(String(otp)).digest('hex');
 };
 
+/**
+ * Performs a constant-time comparison between two hex digests to prevent timing attacks.
+ * @param {string} a - First hex hash.
+ * @param {string} b - Second hex hash.
+ * @returns {boolean} True if both hashes are identical.
+ */
+const safeEqualHash = (a, b) => {
+  const bufA = Buffer.from(String(a), 'utf8');
+  const bufB = Buffer.from(String(b), 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+};
 
-//Register a new user(sign up)
+/**
+ * Normalizes an email address by trimming whitespace and lowercasing.
+ * @param {unknown} email - Raw email input.
+ * @returns {string} Normalized email string.
+ */
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
+/**
+ * Registers a new user account and immediately returns a signed JWT.
+ * @route POST /api/auth/signup
+ */
 const signupUser = async (req, res) => {
-    try{
-        const { name, email, password } = req.body;
-        //check if user already exists
-        const userExists = await User.findOne({ email });
-        if(userExists){
-            return res.status(400).json({message: "User already exists"});
-        }
-        //create new user
-        const user = await User.create({name, email, password});
-        if(user){
-            return res.status(201).json({
-                success: true,
-                message: "User registered successfully",
-                data: {
-                    _id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    token: generateToken(user),//immediately give token so that after signup,user should not redirected to login page
-                }
-            });
-        }
-        else{
-            return res.status(400).json({message: "Invalid user data"});
-        }
+  try {
+    const name = String(req.body.name || '').trim();
+    const email = normalizeEmail(req.body.email);
+    const { password } = req.body;
+
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({ success: false, message: 'User already exists' });
     }
-    catch(error){
-        return res.status(500).json({message: "Internal server error"});
-    }   
+
+    const user = await User.create({ name, email, password });
+    return res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        token: generateToken(user),
+      },
+    });
+  } catch (error) {
+    console.error('Signup error:', error.message);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 };
 
-//login user
+/**
+ * Authenticates an existing user with email + password and issues a JWT.
+ * @route POST /api/auth/login
+ */
 const loginUser = async (req, res) => {
-    try{
-        const { email, password } = req.body;
-        if(!email || !password){
-            return res.status(400).json({
-                success : false,
-                message : "Email and Password are missing"
-            });
-        }
-        const user = await User.findOne({ email });
-        if(user && (await user.matchPassword(password))){
-            return res.status(200).json({
-                success: true,
-                message: "User logged in successfully",
-                data: {
-                    _id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    token: generateToken(user),//logged in user should get token to access protected routes
-                }
-            });
-        }
-        else{
-            return res.status(401).json({message: "Invalid email or password"});
-        }
+  try {
+    const email = normalizeEmail(req.body.email);
+    const { password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required',
+      });
     }
-    catch(error){
-        return res.status(500).json({message: "Internal server error"});
-    }   
+
+    const user = await User.findOne({ email });
+    if (user && (await user.matchPassword(password))) {
+      return res.status(200).json({
+        success: true,
+        message: 'User logged in successfully',
+        data: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          token: generateToken(user),
+        },
+      });
+    }
+
+    return res.status(401).json({ success: false, message: 'Invalid email or password' });
+  } catch (error) {
+    console.error('Login error:', error.message);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 };
 
-//forgot-password
-const forgotPassword = async(req,res)=>{
-    try{
-        const {email} = req.body;
-        if(!email){
-            return res.status(400).json({
-                success : false,
-                message : "Email is required",
-            });
-        }
-        const user = await User.findOne({email});
-        if(!user){
-            return res.status(200).json({
-                success : true,
-                message : "If the email exists, an OTP has been sent.",
-            });
-        }
-
-        const cooldownKey = `password_reset_cooldown:${email}`;//we have to make redis-key for otp spam protection
-        const cooldownExists = await redisClient.get(cooldownKey);//check kro redis me ki iss particular key liye cooldown present h 
-        if(cooldownExists){
-            return res.status(429).json({
-                success : false,
-                message : "Please wait 30 seconds before requesting another OTP"
-            });
-        }
-
-        const otp = generateOTP(); //generating otp
-        const hashedOtp = hashOTP(otp); //hashed otp
-        const otpKey = `password_reset_otp:${email}`; //redis key created
-
-        await redisClient.set(otpKey, hashedOtp, { EX : 300}); //redis me store kro otpkey aur hashedPassword, 300sec me expire
-        const verifyStored = await redisClient.get(otpKey); //check if is it stored
-
-        const attempsKey = `password_reset_attempts:${email}`;//kitti baar wrong otp daala ka count store krega
-        await redisClient.del(attempsKey);//naya otp generate hoga toh delete krta h previous attempts ko
-        await redisClient.set(cooldownKey, "1", {EX : 30}); //abb 30 sec tkk dobara otp nhi maang skta h
-
-        await sendPasswordResetOTP(email, otp);//now send otp
-
-        return res.status(200).json({
-            success : true,
-            message : "If the email exists, an OTP has been sent",
-        });
-
+/**
+ * Generates a 6-digit password reset OTP, caches its SHA-256 hash with a 5-minute TTL
+ * and 30-second resend cooldown, and delivers it via HTTPS email API (or dev console).
+ * Always returns a generic success message to prevent user email enumeration.
+ * @route POST /api/auth/forgot-password
+ */
+const forgotPassword = async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
     }
-    catch(error){
-        console.error("Forgot Password Error : ", error);
-        return res.status(500).json({
-            success : false,
-            message : "Failed to process request",
-        });
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If the email exists, an OTP has been sent.',
+      });
     }
+
+    const cooldownKey = `password_reset_cooldown:${email}`;
+    const cooldownExists = await cacheStore.get(cooldownKey);
+    if (cooldownExists) {
+      return res.status(429).json({
+        success: false,
+        message: 'Please wait 30 seconds before requesting another OTP',
+      });
+    }
+
+    const otp = generateOTP();
+    const hashedOtp = hashOTP(otp);
+    const otpKey = `password_reset_otp:${email}`;
+    const attemptsKey = `password_reset_attempts:${email}`;
+
+    await cacheStore.set(otpKey, hashedOtp, { EX: 300 });
+    await cacheStore.del(attemptsKey);
+    await cacheStore.set(cooldownKey, '1', { EX: 30 });
+
+    await sendPasswordResetOTP(email, otp);
+
+    return res.status(200).json({
+      success: true,
+      message: 'If the email exists, an OTP has been sent.',
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send OTP. Please try again later.',
+    });
+  }
 };
 
-//reset-password
-const resetPassword = async(req, res)=>{
-    try{
-        const { email }= req.body;
-        const otp = String(req.body.otp || "").trim();
-        const newPassword = String(req.body.newPassword || "");
-        if(!email || !otp || !newPassword){
-            return res.status(400).json({
-                success : false,
-                message : "Email, OTP and new password are required",
-            });
-        }
-        if(newPassword.length < 6){
-            return res.status(400).json({
-                success : false,
-                message : "Password must be at least 6 characters",
-            });
-        }
+/**
+ * Verifies a password reset OTP using constant-time hash comparison, enforces a
+ * 5-attempt lockout, updates the user's password, and increments `tokenVersion`
+ * to revoke all active sessions.
+ * @route POST /api/auth/reset-password
+ */
+const resetPassword = async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    const otp = String(req.body.otp || '').trim();
+    const newPassword = String(req.body.newPassword || '');
 
-        const user = await User.findOne({email});
-        if(!user){
-            return res.status(400).json({
-                success : false,
-                message : "Invalid or expired OTP",
-            });
-        }
-
-        const otpKey = `password_reset_otp:${email}`;
-        const attemptKey = `password_reset_attempts:${email}`;
-        const cooldownKey = `password_reset_cooldown:${email}`;
-
-        const attempts = Number((await redisClient.get(attemptKey)) || 0);
-        if(attempts >= 5){
-            return res.status(429).json({
-                success : false,
-                message : "Too many wrong otp attempts. Please request a new OTP later."
-            })
-        }
-
-        const storedHashedOtp = await redisClient.get(otpKey);
-        if(!storedHashedOtp){
-            return res.status(400).json({
-                success : false,
-                message : "Invalid or expired OTP",
-            });
-        }
-
-        const incomingHashedOTP = crypto.createHash("sha256").update(otp).digest("hex");
-        if(incomingHashedOTP !== storedHashedOtp){
-            const newAttempts = await redisClient.incr(attemptKey);
-            if(newAttempts == 1){
-                await redisClient.expire(attemptKey, 15 * 60);
-            }
-            const remaining =Math.max(0, 5 - newAttempts);
-            return res.status(400).json({
-                success : false,
-                message : `Invalid OTP. ${remaining} attempts remaining.`,
-            });
-        }
-
-        user.password = newPassword;
-        user.tokenVersion = (user.tokenVersion || 0) + 1;
-        await user.save();
-
-        await redisClient.del(otpKey);
-        await redisClient.del(attemptKey);
-        await redisClient.del(cooldownKey);
-
-        return res.status(200).json({
-            success:true,
-            message : "Password reset successfully",
-        });
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, OTP, and new password are required',
+      });
     }
-    catch(error){
-        console.error("Reset Password Error :" , error);
-        return res.status(500).json({
-            success : false,
-            message : "Failed to reset password",
-        });
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters',
+      });
     }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+    }
+
+    const otpKey = `password_reset_otp:${email}`;
+    const attemptKey = `password_reset_attempts:${email}`;
+    const cooldownKey = `password_reset_cooldown:${email}`;
+
+    const attempts = Number((await cacheStore.get(attemptKey)) || 0);
+    if (attempts >= 5) {
+      return res.status(429).json({
+        success: false,
+        message: 'Too many wrong OTP attempts. Please request a new OTP later.',
+      });
+    }
+
+    const storedHashedOtp = await cacheStore.get(otpKey);
+    if (!storedHashedOtp) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+    }
+
+    const incomingHashedOtp = hashOTP(otp);
+    if (!safeEqualHash(incomingHashedOtp, storedHashedOtp)) {
+      const newAttempts = await cacheStore.incr(attemptKey);
+      if (newAttempts === 1) {
+        await cacheStore.expire(attemptKey, 15 * 60);
+      }
+      const remaining = Math.max(0, 5 - newAttempts);
+      return res.status(400).json({
+        success: false,
+        message: `Invalid OTP. ${remaining} attempts remaining.`,
+      });
+    }
+
+    user.password = newPassword;
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    await user.save();
+
+    await Promise.all([
+      cacheStore.del(otpKey),
+      cacheStore.del(attemptKey),
+      cacheStore.del(cooldownKey),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password reset successfully',
+    });
+  } catch (error) {
+    console.error('Reset password error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to reset password',
+    });
+  }
 };
 
-//logout
-const logoutUser = async(req, res)=>{
-    try{
-        const user = await User.findById(req.user._id);
-        if(!user){
-            return res.status(404).json({
-                success : false,
-                message : "User Not Found",
-            });
-        }
-        user.tokenVersion += 1;//invalidate previous token
-        await user.save();
-        return res.status(200).json({
-            success : true,
-            message : "Logged Out Successfully",
-        })
+/**
+ * Logs out the authenticated user by incrementing `tokenVersion` in MongoDB,
+ * immediately invalidating all existing JWTs across devices.
+ * @route POST /api/auth/logout
+ */
+const logoutUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
-    catch(error){
-        console.error("Logout Error", error);
-        return res.status(500).json({
-            success : false,
-            message : "Failed to Logout",
-        });
-    }
+
+    user.tokenVersion += 1;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  } catch (error) {
+    console.error('Logout error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to logout' });
+  }
 };
 
-module.exports = { signupUser, loginUser, forgotPassword , resetPassword, logoutUser};
+module.exports = {
+  signupUser,
+  loginUser,
+  forgotPassword,
+  resetPassword,
+  logoutUser,
+};

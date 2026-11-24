@@ -1,0 +1,69 @@
+/* Global CSS Design Tokens for CollabCanvas
+ * Every component stylesheet imports/consumes these variables for consistent theming.
+ */
+
+:root {
+  /* Core Palette */
+  --color-bg: #0f172a;
+  --color-surface: #1e293b;
+  --color-surface-elevated: #273549;
+  --color-border: #334155;
+  --color-border-hover: #475569;
+
+  /* Brand Accent */
+  --color-primary: #6366f1;
+  --color-primary-dark: #4f46e5;
+  --color-primary-soft: rgba(99, 102, 241, 0.14);
+  --color-purple: #a855f7;
+  --color-purple-dark: #7e22ce;
+  --color-pink: #ec4899;
+
+  /* Semantic Status */
+  --color-success: #22c55e;
+  --color-success-soft: rgba(34, 197, 94, 0.12);
+  --color-warning: #f97316;
+  --color-warning-soft: rgba(249, 115, 22, 0.12);
+  --color-danger: #ef4444;
+  --color-danger-dark: #dc2626;
+  --color-danger-soft: rgba(239, 68, 68, 0.12);
+  --color-info: #3b82f6;
+  --color-info-soft: rgba(59, 130, 246, 0.12);
+
+  /* Text Hierarchy */
+  --color-text: #f1f5f9;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-text-subtle: #64748b;
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Layout */
+  --navbar-height: 73px;
+  --container-max: 1280px;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 10px 25px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 20px 45px rgba(0, 0, 0, 0.45);
+  --shadow-primary: 0 12px 30px rgba(99, 102, 241, 0.35);
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 380ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-index Scale */
+  --z-sticky: 50;
+  --z-dropdown: 60;
+  --z-modal: 100;
+  --z-toast: 9999;
+}

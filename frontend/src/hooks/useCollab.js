@@ -1,110 +1,92 @@
-// src/hooks/useCollab.js
 import { useEffect, useRef, useCallback } from 'react';
 import { useSocket } from '../context/SocketContext';
 
 /**
- * Collab hook — subscribes to real-time board events and provides emit helpers.
- * @param {string} boardId - The board ID
- * @param {Object} handlers - Callback handlers for received events
- *   - onStrokeAdded({ stroke, by })
- *   - onStrokeUpdated({ strokeIndex, stroke, by })
- *   - onStrokeDeleted({ strokeIndex, by })
- *   - onBoardCleared({ by })
- *   - onCursorMoved({ userId, name, color, x, y })
- * @returns {Object} emit helpers
+ * Subscribes to real-time Excalidraw collaboration events for a board room and
+ * returns memoized emit helpers with acknowledgment support for reliable delta sync.
+ * @param {string} boardId - Active board ID.
+ * @param {{ onSceneUpdated?: Function, onSceneSynced?: Function, onBoardCleared?: Function, onCursorMoved?: Function }} [handlers={}]
+ * @returns {{ isConnected: boolean, emitSceneUpdate: Function, emitBoardClear: Function, emitCursorMove: Function }}
  */
 export const useCollab = (boardId, handlers = {}) => {
   const { socket, isConnected } = useSocket();
   const handlersRef = useRef(handlers);
 
-  // Keep handlers ref updated (avoid re-subscribing on every render)
   useEffect(() => {
     handlersRef.current = handlers;
   }, [handlers]);
 
-  // JOIN / LEAVE BOARD ROOM
+  // Join the board room upon mount / reconnect and leave cleanly on unmount
   useEffect(() => {
     if (!socket || !isConnected || !boardId) return;
 
-    console.log(`📡 Joining board room: ${boardId}`);
     socket.emit('board:join', { boardId });
-
     return () => {
-      console.log(`👋 Leaving board room: ${boardId}`);
       socket.emit('board:leave', { boardId });
     };
   }, [socket, isConnected, boardId]);
 
-
-  // SUBSCRIBE TO INCOMING EVENTS
+  // Subscribe to incoming scene deltas, initial sync, clear, and cursor broadcasts
   useEffect(() => {
     if (!socket || !isConnected) return;
 
-    const onStrokeAdded = (data) => handlersRef.current.onStrokeAdded?.(data);
-    const onStrokeUpdated = (data) => handlersRef.current.onStrokeUpdated?.(data);
-    const onStrokeDeleted = (data) => handlersRef.current.onStrokeDeleted?.(data);
+    const onSceneUpdated = (data) => handlersRef.current.onSceneUpdated?.(data);
+    const onSceneSynced = (data) => handlersRef.current.onSceneSynced?.(data);
     const onBoardCleared = (data) => handlersRef.current.onBoardCleared?.(data);
     const onCursorMoved = (data) => handlersRef.current.onCursorMoved?.(data);
 
-    socket.on('stroke:added', onStrokeAdded);
-    socket.on('stroke:updated', onStrokeUpdated);
-    socket.on('stroke:deleted', onStrokeDeleted);
+    socket.on('scene:updated', onSceneUpdated);
+    socket.on('scene:sync', onSceneSynced);
     socket.on('board:cleared', onBoardCleared);
     socket.on('cursor:moved', onCursorMoved);
 
     return () => {
-      socket.off('stroke:added', onStrokeAdded);
-      socket.off('stroke:updated', onStrokeUpdated);
-      socket.off('stroke:deleted', onStrokeDeleted);
+      socket.off('scene:updated', onSceneUpdated);
+      socket.off('scene:sync', onSceneSynced);
       socket.off('board:cleared', onBoardCleared);
       socket.off('cursor:moved', onCursorMoved);
     };
   }, [socket, isConnected]);
 
-
-  // EMIT HELPERS — memoized
-  const emitStrokeAdd = useCallback(
-    (stroke) => {
-      if (!socket || !boardId) return;
-      socket.emit('stroke:add', { boardId, stroke });
-    },
+  /**
+   * Emits a chunk of modified Excalidraw elements with a 5s acknowledgment timeout.
+   * Resolves to `{ ok: true }` on server acceptance or `{ ok: false, reason }` for retry.
+   */
+  const emitSceneUpdate = useCallback(
+    (elements) =>
+      new Promise((resolve) => {
+        if (!elements?.length) return resolve({ ok: true });
+        if (!socket || !boardId) return resolve({ ok: false, reason: 'no_socket' });
+        socket
+          .timeout(5000)
+          .emit('scene:update', { boardId, elements }, (err, ack) => {
+            if (err) return resolve({ ok: false, reason: 'timeout' });
+            resolve(
+              ack && typeof ack.ok === 'boolean' ? ack : { ok: false, reason: 'no_ack' }
+            );
+          });
+      }),
     [socket, boardId]
   );
 
-  const emitStrokeUpdate = useCallback(
-    (strokeIndex, stroke) => {
-      if (!socket || !boardId) return;
-      socket.emit('stroke:update', { boardId, strokeIndex, stroke });
-    },
-    [socket, boardId]
-  );
-
-  const emitStrokeDelete = useCallback(
-    (strokeIndex) => {
-      if (!socket || !boardId) return;
-      socket.emit('stroke:delete', { boardId, strokeIndex });
-    },
-    [socket, boardId]
-  );
-
+  /** Emits an owner-only request to clear the board for all connected users. */
   const emitBoardClear = useCallback(() => {
     if (!socket || !boardId) return;
     socket.emit('board:clear', { boardId });
   }, [socket, boardId]);
 
+  /** Emits the local pointer's canvas coordinates and mouse button state. */
   const emitCursorMove = useCallback(
-    (x, y) => {
+    (x, y, button = 'up') => {
       if (!socket || !boardId) return;
-      socket.emit('cursor:move', { boardId, x, y });
+      socket.emit('cursor:move', { boardId, x, y, button });
     },
     [socket, boardId]
   );
 
   return {
     isConnected,
-    emitStrokeAdd,
-    emitStrokeUpdate,
-    emitStrokeDelete,
+    emitSceneUpdate,
     emitBoardClear,
     emitCursorMove,
   };

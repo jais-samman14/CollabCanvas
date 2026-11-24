@@ -1,4 +1,3 @@
-// src/services/axiosInstance.js
 import axios from 'axios';
 import { API_URL, STORAGE_KEYS } from '../utils/constants';
 
@@ -9,7 +8,7 @@ const axiosInstance = axios.create({
   },
 });
 
-// Request interceptor — auto-attach JWT token
+// Attach stored JWT Bearer token to every outgoing API request
 axiosInstance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
@@ -21,30 +20,21 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor — handle common errors globally
+// Globally handle 401 session expiration and 429 rate-limit responses
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response?.status;
 
-    // Session expired (tokenVersion mismatch, expired JWT, etc.)
     if (status === 401) {
       const currentPath = window.location.pathname;
-
-      // Don't redirect on login/signup/forgot flows (expected 401s)
-      const publicPaths = [
-        '/login',
-        '/signup',
-        '/forgot-password',
-        '/reset-password',
-      ];
+      const publicPaths = ['/login', '/signup', '/forgot-password', '/reset-password'];
       const isPublicRoute = publicPaths.some((p) => currentPath.startsWith(p));
 
       if (!isPublicRoute) {
         localStorage.removeItem(STORAGE_KEYS.TOKEN);
         localStorage.removeItem(STORAGE_KEYS.USER);
 
-        // Dispatch custom event for React to react (toast + redirect)
         window.dispatchEvent(
           new CustomEvent('session-expired', {
             detail: {
@@ -53,17 +43,9 @@ axiosInstance.interceptors.response.use(
             },
           })
         );
-
-        // Immediate redirect if listener doesn't handle
-        setTimeout(() => {
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login';
-          }
-        }, 100);
       }
     }
 
-    //  Rate limit exceeded (429)
     if (status === 429) {
       window.dispatchEvent(
         new CustomEvent('rate-limit-hit', {

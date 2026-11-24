@@ -1,0 +1,15 @@
+/* ExcalidrawBoard.css — Full-bleed container for the Excalidraw infinite canvas */
+
+.excalidraw-board {
+  flex: 1;
+  height: 100%;
+  width: 100%;
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.excalidraw-board .excalidraw {
+  width: 100%;
+  height: 100%;
+}

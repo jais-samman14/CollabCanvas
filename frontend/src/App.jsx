@@ -1,47 +1,55 @@
-// src/App.jsx
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
-import Navbar from './components/NavBar';
-import PrivateRoute from './components/PrivateRoute';
-import LandingPage from './pages/LandingPage';
-import LoginPage from './pages/LoginPage';
-import SignupPage from './pages/SignupPage';
-import Dashboard from './pages/Dashboard';
-import BoardPage from './pages/BoardPage';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import ResetPasswordPage from './pages/ResetPasswordPage';
+import Navbar from './components/NavBar/NavBar';
+import PrivateRoute from './components/PrivateRoute/PrivateRoute';
+import LandingPage from './pages/LandingPage/LandingPage';
+import LoginPage from './pages/LoginPage/LoginPage';
+import SignupPage from './pages/SignupPage/SignupPage';
+import Dashboard from './pages/Dashboard/Dashboard';
+import BoardPage from './pages/BoardPage/BoardPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage/ResetPasswordPage';
+import './App.css';
 
-// Global toast handler for auth events
+/**
+ * Listens for global window custom events (`session-expired`, `rate-limit-hit`)
+ * dispatched by Axios interceptors or SocketContext and displays a toast banner.
+ */
 const GlobalEventListener = () => {
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
+    let timerId = null;
+
     const handleSessionExpired = (e) => {
+      clearTimeout(timerId);
       setToast({
         type: 'warning',
         message: e.detail?.message || 'Session expired. Please login again.',
       });
-      setTimeout(() => {
+      timerId = setTimeout(() => {
         setToast(null);
-        navigate('/login');
+        navigate('/login', { replace: true });
       }, 1500);
     };
 
     const handleRateLimit = (e) => {
+      clearTimeout(timerId);
       setToast({
         type: 'error',
         message: e.detail?.message || 'Too many requests. Please slow down.',
       });
-      setTimeout(() => setToast(null), 4000);
+      timerId = setTimeout(() => setToast(null), 4000);
     };
 
     window.addEventListener('session-expired', handleSessionExpired);
     window.addEventListener('rate-limit-hit', handleRateLimit);
 
     return () => {
+      clearTimeout(timerId);
       window.removeEventListener('session-expired', handleSessionExpired);
       window.removeEventListener('rate-limit-hit', handleRateLimit);
     };
@@ -50,17 +58,9 @@ const GlobalEventListener = () => {
   if (!toast) return null;
 
   return (
-    <div className="fixed top-24 right-6 z-[9999] max-w-sm animate-slide-in">
-      <div
-        className={`px-4 py-3 rounded-lg shadow-2xl border font-medium text-sm flex items-start gap-3 ${
-          toast.type === 'warning'
-            ? 'bg-orange-500/95 border-orange-400 text-white'
-            : toast.type === 'error'
-            ? 'bg-red-500/95 border-red-400 text-white'
-            : 'bg-canvas-surface border-canvas-border text-white'
-        }`}
-      >
-        <span className="text-xl leading-none">
+    <div className="global-toast-wrapper">
+      <div className={`global-toast global-toast--${toast.type}`}>
+        <span className="global-toast__icon">
           {toast.type === 'warning' ? '⚠️' : toast.type === 'error' ? '🚫' : 'ℹ️'}
         </span>
         <span>{toast.message}</span>
@@ -69,31 +69,36 @@ const GlobalEventListener = () => {
   );
 };
 
+/**
+ * Root application component configuring client-side routes, authentication,
+ * WebSocket context, persistent navigation bar, and global toast alerts.
+ */
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <SocketProvider>
-          <div className="min-h-screen bg-canvas-bg text-white">
+          <div className="app-shell">
             <Navbar />
             <GlobalEventListener />
 
             <Routes>
-              {/* Public routes */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />}/>
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
-              {/* Protected routes */}
-              <Route path="/dashboard" 
+
+              <Route
+                path="/dashboard"
                 element={
                   <PrivateRoute>
                     <Dashboard />
                   </PrivateRoute>
                 }
               />
-              <Route path="/board/:id"
+              <Route
+                path="/board/:id"
                 element={
                   <PrivateRoute>
                     <BoardPage />
@@ -101,9 +106,7 @@ function App() {
                 }
               />
             </Routes>
-
           </div>
-          
         </SocketProvider>
       </AuthProvider>
     </BrowserRouter>

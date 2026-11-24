@@ -1,0 +1,206 @@
+/* LoginPage.css — Authentication card and form controls for Login */
+
+.login-page {
+  min-height: calc(100vh - var(--navbar-height));
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+
+.login-page__container {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 440px;
+}
+
+.login-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 36px 32px;
+  box-shadow: var(--shadow-lg);
+  animation: fadeInUp 0.45s ease-out both;
+}
+
+.login-card__header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.login-card__icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 16px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-purple));
+  box-shadow: var(--shadow-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+}
+
+.login-card__title {
+  font-size: 30px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.login-card__muted {
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.login-card__error {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  background-color: var(--color-danger-soft);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  color: #f87171;
+  font-size: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.login-field__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+
+.login-field__input-wrap {
+  position: relative;
+}
+
+.login-field__icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.login-field__input {
+  width: 100%;
+  padding: 12px 14px 12px 42px;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.login-field__input--with-toggle {
+  padding-right: 44px;
+}
+
+.login-field__input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+.login-field__toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 17px;
+  color: var(--color-text-muted);
+}
+
+.login-form__forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.login-form__submit {
+  width: 100%;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--color-primary), var(--color-purple));
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: var(--shadow-primary);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.login-form__submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.login-form__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-card__footer {
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.login-card__link {
+  font-size: 13px;
+  color: #818cf8;
+}
+
+.login-card__link:hover {
+  text-decoration: underline;
+}
+
+.login-card__link--bold {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.login-card__success {
+  text-align: center;
+  padding: 24px 0;
+}
+
+.login-card__success-circle {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #22c55e, #10b981);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 38px;
+  color: #ffffff;
+}
+
+.login-card__success-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.login-page__trust {
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-subtle);
+  margin-top: 20px;
+}
